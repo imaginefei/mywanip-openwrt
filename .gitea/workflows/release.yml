@@ -62,9 +62,15 @@ jobs:
           fi
           echo "release id: ${RELEASE_ID}"
 
-          # 上传全部 ipk（同名覆盖）
+          # 上传全部 ipk；已存在同名制品则跳过（重跑幂等）
+          EXISTING=$(curl -sSf "${API}/${RELEASE_ID}/assets" \
+            -H "Authorization: token ${TOKEN}" | jq -r '.[].name')
           for f in release/*/*.ipk; do
             NAME=$(basename "${f}")
+            if echo "${EXISTING}" | grep -qx "${NAME}"; then
+              echo "skip (已存在): ${NAME}"
+              continue
+            fi
             curl -sSf -X POST "${API}/${RELEASE_ID}/assets?name=${NAME}" \
               -H "Authorization: token ${TOKEN}" \
               -F "attachment=@${f}"

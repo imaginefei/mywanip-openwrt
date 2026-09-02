@@ -8,6 +8,13 @@ mywanipd 是 OpenWrt/iStoreOS 上的 WAN 口 IP 查询服务：Go 守护进程�
 
 **面向用户的产出物（commit message、代码注释、文档）使用中文。** conventional commit 前缀（feat/fix/build/chore/docs）保留英文，描述和正文用中文。
 
+## 维护者背景与协作方式
+
+- 维护者**熟悉 Go，但 OpenWrt 开发是新手**：Go 层面的写法不用解释；涉及 OpenWrt 概念（procd、ubus、UCI、ipk/opkg、LuCI、netifd 等）时需要简要说明"是什么、为什么这样做"。
+- 维护者习惯**详细、分步骤的计划**，并会对技术决策追问理由（例如"为什么不需要 Docker/musl-cross"）。做方案时把权衡和替代方案讲清楚，不要只给结论。
+- 开发机：Apple Silicon Mac，用 goenv 管理 Go（若 `go version` 报 shim 路径错误，跑 `goenv rehash` 修复）。
+- 目标设备（维护者实测）：**iStoreOS 24.10.8**（2026073111 构建，基于 OpenWrt 24.10），上网方式 PPPoE（接口设备名 `pppoe-wan`）。上机验证在该设备进行；方式 B 的 SDK 需用 24.10 版本。
+
 ## 常用命令
 
 ```sh

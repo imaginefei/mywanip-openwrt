@@ -43,13 +43,6 @@ jobs:
           make build
           make ipk
 
-      - name: 上传构建产物 (Actions Artifacts, run 页可下载)
-        uses: actions/upload-artifact@v3
-        with:
-          name: mywanip-ipk-${{ inputs.tag || github.ref_name }}
-          path: release/
-          if-no-files-found: error
-
       - name: 用 tea CLI 创建 Release 并上传 ipk
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}   # Gitea 自动注入的仓库 token（兼容名）

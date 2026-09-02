@@ -49,10 +49,12 @@ return view.extend({
 		var view = this;
 		return callInitAction('mywanipd', action).then(function () {
 			if (!silent) {
-				ui.addNotification(null, E('p', _('操作已执行：%s').format(action)));
+				// 成功提示 3 秒后自动淡出，不需手动关闭
+				ui.addTimeLimitedNotification(null, E('p', _('操作已执行：%s').format(action)), 3000, 'info');
 			}
 			setTimeout(function () { view.fetchStatus(); }, 1500);
 		}).catch(function (e) {
+			// 失败原因保留持久通知，给用户时间阅读
 			ui.addNotification(null, E('p', _('操作失败：%s').format(e || '无权限')));
 		});
 	},

@@ -4,10 +4,7 @@
 		"read": {
 			"uci": [ "mywanip" ],
 			"ubus": {
-				"file": [ "exec" ]
-			},
-			"fs": {
-				"exec": [ "/etc/init.d/mywanipd" ]
+				"luci": [ "setInitAction" ]
 			}
 		},
 		"write": {

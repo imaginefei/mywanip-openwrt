@@ -6,10 +6,13 @@
 'require rpc';
 'require ui';
 
+// 通过 LuCI 标准 ubus 方法 luci.setInitAction 控制 init 脚本
+// （rpcd-mod-luci 提供；等价于 /etc/init.d/<name> <action>）
 var callInitAction = rpc.declare({
-	object: 'file',
-	method: 'exec',
-	params: ['command', 'args']
+	object: 'luci',
+	method: 'setInitAction',
+	params: ['name', 'action'],
+	expect: { result: false }
 });
 
 return view.extend({
@@ -22,15 +25,14 @@ return view.extend({
 		return window.location.protocol + '//' + window.location.hostname + ':' + port + (path || '/');
 	},
 
-	// 调用 /etc/init.d/mywanipd <args...>，完成后刷新状态区
-	initAction: function (args) {
+	// 调用 /etc/init.d/mywanipd <action>（enable/disable/start/stop/restart）
+	initAction: function (action) {
 		var view = this;
-		return callInitAction('/etc/init.d/mywanipd', args).then(function (res) {
-			if (res && res.code === 0) {
-				setTimeout(function () { view.fetchStatus(); }, 1500);
-			} else {
-				ui.addNotification(null, E('p', _('操作失败：%s').format((res && res.stderr) ? res.stderr : '无权限')));
-			}
+		return callInitAction('mywanipd', action).then(function () {
+			ui.addNotification(null, E('p', _('操作已执行：%s').format(action)));
+			setTimeout(function () { view.fetchStatus(); }, 1500);
+		}).catch(function (e) {
+			ui.addNotification(null, E('p', _('操作失败：%s').format(e || '无权限')));
 		});
 	},
 
@@ -105,8 +107,8 @@ return view.extend({
 						'click': function (ev) {
 							ev.preventDefault();
 							// enable（开机自启）后 restart；要求页面已勾选「启用服务」并保存
-							this.initAction(['enable']).then(function () {
-								return this.initAction(['restart']);
+							this.initAction('enable').then(function () {
+								return this.initAction('restart');
 							}.bind(this));
 						}.bind(this)
 					}, _('启动 / 重启服务')),
@@ -115,7 +117,7 @@ return view.extend({
 						'class': 'btn cbi-button cbi-button-negative',
 						'click': function (ev) {
 							ev.preventDefault();
-							this.initAction(['stop']);
+							this.initAction('stop');
 						}.bind(this)
 					}, _('停止服务')),
 					' ',

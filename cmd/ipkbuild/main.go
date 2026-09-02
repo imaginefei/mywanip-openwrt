@@ -221,6 +221,8 @@ func totalSize(files []fileEntry) int {
 
 // makeTarGz 把文件列表打成确定性 tar.gz：零时间戳、root 属主、按名排序。
 // tar 成员名统一加 "./" 前缀（与 OpenWrt 官方 ipk 一致）。
+// 必须为每个父目录写入目录条目——opkg 解压时不会自动创建目录，
+// 缺失目录项会导致 wfopen: ... No such file or directory。
 func makeTarGz(files []fileEntry) ([]byte, error) {
 	sorted := make([]fileEntry, len(files))
 	copy(sorted, files)
@@ -230,26 +232,27 @@ func makeTarGz(files []fileEntry) ([]byte, error) {
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
 
+	// 收集全部父目录（去重、排序），先写目录条目
+	dirSet := make(map[string]bool)
+	var dirs []string
 	for _, f := range sorted {
-		name := f.name
-		if !strings.HasPrefix(name, "./") {
-			name = "./" + name
+		name := "./" + f.name
+		for _, d := range parentDirs(name) {
+			if !dirSet[d] {
+				dirSet[d] = true
+				dirs = append(dirs, d)
+			}
 		}
-		hdr := &tar.Header{
-			Name:    name,
-			Mode:    f.mode,
-			Size:    int64(len(f.data)),
-			ModTime: time.Time{}, // 零时间戳，保证产物可复现
-			Uid:     0,
-			Gid:     0,
-			Uname:   "root",
-			Gname:   "root",
-			Format:  tar.FormatUSTAR,
-		}
-		if err := tw.WriteHeader(hdr); err != nil {
+	}
+	sort.Strings(dirs)
+	for _, d := range dirs {
+		if err := writeTarHeader(tw, d, 0o755, tar.TypeDir, nil); err != nil {
 			return nil, err
 		}
-		if _, err := tw.Write(f.data); err != nil {
+	}
+
+	for _, f := range sorted {
+		if err := writeTarHeader(tw, "./"+f.name, f.mode, tar.TypeReg, f.data); err != nil {
 			return nil, err
 		}
 	}
@@ -260,6 +263,43 @@ func makeTarGz(files []fileEntry) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// parentDirs 返回 "./a/b/c" 形式路径的全部父目录（含 "./"），
+// 结果均以 '/' 结尾："./"、"./a/"、"./a/b/"。
+func parentDirs(name string) []string {
+	parts := strings.Split(name, "/") // 形如 [".", "www", ..., "file.js"]
+	var dirs []string
+	cur := parts[0]
+	dirs = append(dirs, cur+"/") // "./"
+	for i := 1; i < len(parts)-1; i++ {
+		cur += "/" + parts[i]
+		dirs = append(dirs, cur+"/")
+	}
+	return dirs
+}
+
+func writeTarHeader(tw *tar.Writer, name string, mode int64, typ byte, data []byte) error {
+	hdr := &tar.Header{
+		Name:    name,
+		Mode:    mode,
+		Size:    int64(len(data)),
+		ModTime: time.Time{}, // 零时间戳，保证产物可复现
+		Uid:     0,
+		Gid:     0,
+		Uname:   "root",
+		Gname:   "root",
+		Typeflag: typ,
+		Format:  tar.FormatUSTAR,
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return err
+	}
+	if len(data) > 0 {
+		_, err := tw.Write(data)
+		return err
+	}
+	return nil
 }
 
 // writeIPK 生成 gzip+tar 格式 ipk（OpenWrt 24.10 opkg 支持的格式）：

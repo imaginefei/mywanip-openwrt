@@ -51,6 +51,29 @@ func TestWriteIPKStructure(t *testing.T) {
 	if string(bin) != "bin" {
 		t.Errorf("binary content mismatch")
 	}
+	// 父目录必须以目录条目存在（opkg 解压时不会自动建目录）
+	for _, dir := range []string{"./", "./usr/", "./usr/bin/"} {
+		if _, ok := innerData[dir]; !ok {
+			t.Errorf("data.tar.gz missing directory entry %s", dir)
+		}
+	}
+}
+
+// TestLuciPackageContainsDeepDir 模拟 LuCI 包的深层路径，
+// 确认 view/mywanip 这种新目录会被打进 tar。
+func TestLuciPackageContainsDeepDir(t *testing.T) {
+	files := []fileEntry{
+		{"www/luci-static/resources/view/mywanip/mywanip.js", []byte("js"), 0o644},
+	}
+	raw, err := makeTarGz(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := readTarGz(t, raw)
+	want := "./www/luci-static/resources/view/mywanip/"
+	if _, ok := entries[want]; !ok {
+		t.Fatalf("missing deep directory entry %s (opkg wfopen failure)", want)
+	}
 }
 
 func TestMakeTarGzEntries(t *testing.T) {

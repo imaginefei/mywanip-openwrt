@@ -1,19 +1,19 @@
 # Gitea Actions 发布工作流
 #
-# 自动触发：推送 v* tag → 构建并创建 Release。
-# 手动触发：仓库 Actions 页面选中 release 工作流 → Run workflow，
-#           输入要补发/重发的 tag（如 v1.0.0）。
+# 自动触发:推送 v* tag -> 构建并创建 Release.
+# 手动触发:仓库 Actions 页面选中 release 工作流 -> Run workflow,
+#           输入要补发/重发的 tag(如 v1.0.0).
 #
-# 与 GitHub 版（.github/workflows/release.yml）功能一致，差异点：
+# 与 GitHub 版(.github/workflows/release.yml)功能一致,差异点:
 #   - Gitea 从 .gitea/workflows/ 读取工作流
-#   - 制品上传用 Gitea 官方 CLI（tea）：创建 Release、上传/覆盖 Release 附件
-#   - 同名附件采用“先删后传”实现覆盖更新（Gitea API 不支持直接替换文件内容）
-#   - tea 优先用 runner 挂载缓存 /opt/tea-cache（宿主一次下载永久复用），
+#   - 制品上传用 Gitea 官方 CLI(tea):创建 Release,上传/覆盖 Release 附件
+#   - 同名附件采用"先删后传"实现覆盖更新(Gitea API 不支持直接替换文件内容)
+#   - tea 优先用 runner 挂载缓存 /opt/tea-cache(宿主一次下载永久复用),
 #     缓存不可用时回退到 gitea.com 下载
 #
-# 前提：
-#   1. Gitea >= 1.21，Actions 默认启用
-#   2. 已注册 runner（管理后台 -> Actions -> Runners）
+# 前提:
+#   1. Gitea >= 1.21,Actions 默认启用
+#   2. 已注册 runner(管理后台 -> Actions -> Runners)
 #   3. 仓库设置 -> 启用仓库 Actions
 name: release
 
@@ -23,7 +23,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: '要构建发布的 tag，如 v1.0.0'
+        description: '要构建发布的 tag,如 v1.0.0'
         required: true
 
 jobs:
@@ -48,17 +48,17 @@ jobs:
 
       - name: 用 tea CLI 创建 Release 并上传 ipk
         env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}   # Gitea 自动注入的仓库 token（兼容名）
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}   # Gitea 自动注入的仓库 token(兼容名)
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -e
 
-          # 1. 准备 tea：优先 runner 挂载缓存(/opt/tea-cache)，缺失才从 gitea.com 下载
+          # 1. 准备 tea:优先 runner 挂载缓存(/opt/tea-cache),缺失才从 gitea.com 下载
           TEA=/opt/tea-cache/tea
           if [ -x "${TEA}" ]; then
             echo "== 使用挂载缓存 tea: ${TEA} =="
           else
-            echo "== 缓存未命中，从 gitea.com 下载 tea =="
+            echo "== 缓存未命中,从 gitea.com 下载 tea =="
             curl -sL --max-time 300 -o /tmp/tea \
               "https://gitea.com/gitea/tea/releases/download/v0.15.1/tea-0.15.1-linux-amd64"
             chmod +x /tmp/tea
@@ -66,16 +66,16 @@ jobs:
           fi
           "${TEA}" --version
 
-          # 2. 登录（url 需与 actions/checkout 的 remote 一致 = 实例地址）
+          # 2. 登录(url 需与 actions/checkout 的 remote 一致 = 实例地址)
           "${TEA}" login add --name ci \
             --url "${GITHUB_SERVER_URL}" --token "${TOKEN}" --no-version-check
 
-          # 3. 创建 Release；已存在则忽略（幂等，可重跑）
+          # 3. 创建 Release;已存在则忽略(幂等,可重跑)
           if ! "${TEA}" releases create "${TAG}" --title "${TAG}" --note "Release ${TAG}"; then
-            echo "== Release ${TAG} 已存在，跳过创建 =="
+            echo "== Release ${TAG} 已存在,跳过创建 =="
           fi
 
-          # 4. 上传 ipk；同名附件先删后传（覆盖更新，保证重新构建后可替换旧包）
+          # 4. 上传 ipk;同名附件先删后传(覆盖更新,保证重新构建后可替换旧包)
           EXISTING=$("${TEA}" releases assets list "${TAG}" -o json | jq -r '.[].name')
           for f in release/*/*.ipk; do
             NAME=$(basename "${f}")

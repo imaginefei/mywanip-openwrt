@@ -9,6 +9,8 @@ OpenWrt/iStoreOS 上的 WAN 口 IP 查询服务。一个纯 Go 编写的轻量�
 | `mywanipd_<ver>_<arch>.ipk` | 守护进程二进制、procd init 脚本、默认 UCI 配置 |
 | `luci-app-mywanip_<ver>_all.ipk` | LuCI 页面（菜单/ACL/JS view），架构无关 |
 
+![LuCI「外网IP查询」配置页](docs/images/index.png)
+
 ## HTTP 接口
 
 | 路径 | 成功 | 失败 |

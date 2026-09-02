@@ -67,7 +67,7 @@ git tag v1.0.0 && make clean && make build && make ipk   # 产物落在 release/
 - **服务启停控制走官方 `luci.setInitAction`**（ubus 方法，luci-app-sqm/ddns 同款），不要用 `file.exec` 直调 init 脚本——ACL 的 exec 路径授权写法容易踩错且已弃用方向。acl.d 授权 = UCI 读写 + `read.ubus.luci: [setInitAction]`。
 - **「保存并应用」不会拉起未启动过的服务**（踩过的坑）：procd 的 reload 触发器只在服务经 procd 启动后才注册，stop 后即删除。所以视图重写了 `handleSaveApply`：标准保存+应用完成后按 enabled 状态显式 enable+restart 或 stop。改 LuCI 行为时保持这个语义。
 - ipk control 脚本：`postinst` 安装即 `enable`（注册 rc.d 开机自启；enabled=0 门控保证不实际启动）；`prerm` 里 stop 输出重定向到 /dev/null（服务未运行时 procd 回 ubus Not found，属无害噪音，静音）。
-- LuCI 页面是**现代客户端 JS view 架构**（OpenWrt 22.03+，`menu.d/*.json` 菜单 + `acl.d/*.json` 权限 + `www/luci-static/resources/view/mywanip/mywanip.js` 视图），**不含任何 Lua，不需要 luci-compat**。docs/notes/ 里旧学习文档的 Lua CBI 写法已过时，不要照抄。操作成功提示用 `ui.addTimeLimitedNotification`（自动淡出），失败用持久 `ui.addNotification`。
+- LuCI 页面是**现代客户端 JS view 架构**（OpenWrt 22.03+，`menu.d/*.json` 菜单 + `acl.d/*.json` 权限 + `www/luci-static/resources/view/mywanip/mywanip.js` 视图），**不含任何 Lua，不需要 luci-compat**。网上旧教程的 Lua CBI 写法已过时，不要照抄。操作成功提示用 `ui.addTimeLimitedNotification`（自动淡出），失败用持久 `ui.addNotification`。
 - LuCI 页面状态展示靠浏览器跨端口 fetch 守护进程（mywanipd 已开 `Access-Control-Allow-Origin: *`），不走 rpcd/ubus。**ACL/菜单变更后必须退出 LuCI 重新登录**才生效（会话权限缓存）。
 - 两个包分离：`mywanipd`（分架构）与 `luci-app-mywanip`（Architecture: all，Depends mywanipd）。`deploy/openwrt/*/Makefile` 是可选的 OpenWrt SDK 方式（方式 B），日常打包用 ipkbuild（方式 A）。
 

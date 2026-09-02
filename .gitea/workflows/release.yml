@@ -7,6 +7,8 @@
 # 与 GitHub 版（.github/workflows/release.yml）功能一致，差异点：
 #   - Gitea 从 .gitea/workflows/ 读取工作流
 #   - 制品上传用 Gitea 官方 CLI（tea）：创建/补传 Release 附件，幂等可重跑
+#   - tea 优先用 runner 挂载缓存 /opt/tea-cache（宿主一次下载永久复用），
+#     缓存不可用时回退到 gitea.com 下载
 #
 # 前提：
 #   1. Gitea >= 1.21，Actions 默认启用
@@ -50,30 +52,37 @@ jobs:
         run: |
           set -e
 
-          # 1. 下载 Gitea 官方 CLI: tea（下载源 gitea.com）
-          curl -sL --max-time 300 -o /tmp/tea \
-            "https://gitea.com/gitea/tea/releases/download/v0.15.1/tea-0.15.1-linux-amd64"
-          chmod +x /tmp/tea
-          /tmp/tea --version
+          # 1. 准备 tea：优先 runner 挂载缓存(/opt/tea-cache)，缺失才从 gitea.com 下载
+          TEA=/opt/tea-cache/tea
+          if [ -x "${TEA}" ]; then
+            echo "== 使用挂载缓存 tea: ${TEA} =="
+          else
+            echo "== 缓存未命中，从 gitea.com 下载 tea =="
+            curl -sL --max-time 300 -o /tmp/tea \
+              "https://gitea.com/gitea/tea/releases/download/v0.15.1/tea-0.15.1-linux-amd64"
+            chmod +x /tmp/tea
+            TEA=/tmp/tea
+          fi
+          "${TEA}" --version
 
           # 2. 登录（url 需与 actions/checkout 的 remote 一致 = 实例地址）
-          /tmp/tea login add --name ci \
+          "${TEA}" login add --name ci \
             --url "${GITHUB_SERVER_URL}" --token "${TOKEN}" --no-version-check
 
           # 3. 创建 Release；已存在则忽略（幂等，可重跑）
-          if ! /tmp/tea releases create "${TAG}" --title "${TAG}" --note "Release ${TAG}"; then
+          if ! "${TEA}" releases create "${TAG}" --title "${TAG}" --note "Release ${TAG}"; then
             echo "== Release ${TAG} 已存在，跳过创建 =="
           fi
 
           # 4. 补传缺失的 ipk（已有同名附件则跳过）
-          EXISTING=$(/tmp/tea releases assets list "${TAG}" -o json | jq -r '.[].name')
+          EXISTING=$("${TEA}" releases assets list "${TAG}" -o json | jq -r '.[].name')
           for f in release/*/*.ipk; do
             NAME=$(basename "${f}")
             if echo "${EXISTING}" | grep -qx "${NAME}"; then
               echo "skip (已存在): ${NAME}"
               continue
             fi
-            /tmp/tea releases assets create "${TAG}" "${f}"
+            "${TEA}" releases assets create "${TAG}" "${f}"
             echo "uploaded: ${NAME}"
           done
           echo "== 全部完成 =="

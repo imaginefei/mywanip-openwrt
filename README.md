@@ -98,7 +98,7 @@ make test      # 单元测试
 
 **为什么不需要 musl-cross 等 C 交叉工具链？** 本项目 `CGO_ENABLED=0`，纯 Go 二进制不链接 libc（Linux 下直接发系统调用、用 netlink 枚举网卡），交叉编译只需 `GOOS/GOARCH` 环境变量。musl-cross（`x86_64-linux-musl-gcc` 等）是 CGO 场景（链接 C 库如 libubus、sqlite）才需要的工具链，且必须在 Linux 环境运行。
 
-**为什么 ipk 打包不用 Docker/SDK？** ipk 是 `ar` 归档 + 两个 tar.gz；macOS 的 BSD ar/bsdtar 与 GNU opkg 不兼容，而 Go 标准库可以确定性地生成 tar.gz 并手写 ar 归档（`cmd/ipkbuild`），所以 macOS 原生一条 `make ipk` 出包。如需进 OpenWrt SDK / 上游 feeds，`deploy/openwrt/*/Makefile` 提供了方式 B（预编译二进制策略）。
+**为什么 ipk 打包不用 Docker/SDK？** OpenWrt 的 ipk 是 **gzip 压缩的 tar 包**（经典 ipkg 格式，外层 tar 内含 `./debian-binary`、`./data.tar.gz`、`./control.tar.gz`，与官方仓库产物一致）。Go 标准库 `archive/tar`+`compress/gzip` 即可确定性生成（`cmd/ipkbuild`，零时间戳、root 属主、文件名排序），macOS 原生一条 `make ipk` 出包，产物连打两次字节一致。注意：不要用 Debian 的 ar 格式 ipk，OpenWrt 24.10 的 opkg 会报 "Malformed package file"。如需进 OpenWrt SDK / 上游 feeds，`deploy/openwrt/*/Makefile` 提供了方式 B（预编译二进制策略）。
 
 ## 本地开发调试（macOS）
 

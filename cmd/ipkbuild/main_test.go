@@ -4,36 +4,52 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"strings"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
-func TestMakeArStructure(t *testing.T) {
-	ipk := makeAr([]fileEntry{
-		{"debian-binary", []byte("2.0\n"), 0o644},
-		{"control.tar.gz", []byte("fake-control"), 0o644},
-		{"data.tar.gz", []byte("fake-data"), 0o644},
-	})
+// TestWriteIPKStructure 验证 ipk 为 gzip+tar 格式（OpenWrt opkg 实际支持的格式），
+// 外层 tar 含三个必需成员，debian-binary 内容为 "2.0"。
+func TestWriteIPKStructure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.ipk")
+	control := []fileEntry{{"control", []byte("Package: x\n"), 0o644}}
+	data := []fileEntry{{"usr/bin/x", []byte("bin"), 0o755}}
+	if err := writeIPK(path, control, data); err != nil {
+		t.Fatalf("writeIPK: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// gzip 魔数 1f 8b
+	if raw[0] != 0x1f || raw[1] != 0x8b {
+		t.Fatalf("ipk is not gzip: first bytes %x %x", raw[0], raw[1])
+	}
 
-	if !bytes.HasPrefix(ipk, []byte("!<arch>\n")) {
-		t.Fatalf("missing ar magic header")
+	entries := readTarGz(t, raw)
+	if string(entries["./debian-binary"]) != "2.0\n" {
+		t.Errorf("debian-binary = %q, want 2.0\\n", entries["./debian-binary"])
 	}
-	// 成员顺序固定
-	body := string(ipk[len("!<arch>\n"):])
-	pos := strings.Index(body, "debian-binary")
-	ctrlPos := strings.Index(body, "control.tar.gz")
-	dataPos := strings.Index(body, "data.tar.gz")
-	if !(pos < ctrlPos && ctrlPos < dataPos) {
-		t.Fatalf("ar member order wrong: debian=%d control=%d data=%d", pos, ctrlPos, dataPos)
+	if _, ok := entries["./control.tar.gz"]; !ok {
+		t.Errorf("outer tar missing ./control.tar.gz")
 	}
-	// 每个头 60 字节，以 "`\n" 结尾
-	header := body[pos : pos+60]
-	if !strings.HasSuffix(header, "`\n") {
-		t.Fatalf("ar header not terminated by backtick-newline: %q", header)
+	if _, ok := entries["./data.tar.gz"]; !ok {
+		t.Errorf("outer tar missing ./data.tar.gz")
 	}
-	// GNU 约定：名字字段必须以 '/' 结尾（opkg/libarchive 靠它截断名字）
-	if !strings.HasPrefix(header, "debian-binary/") {
-		t.Fatalf("ar name field must be slash-terminated (GNU convention): %q", header[:16])
+
+	// 内层 tar 文件名同样带 ./ 前缀
+	innerControl := readTarGz(t, entries["./control.tar.gz"])
+	if _, ok := innerControl["./control"]; !ok {
+		t.Errorf("control.tar.gz missing ./control, got %v", keys(innerControl))
+	}
+	innerData := readTarGz(t, entries["./data.tar.gz"])
+	bin, ok := innerData["./usr/bin/x"]
+	if !ok {
+		t.Fatalf("data.tar.gz missing ./usr/bin/x")
+	}
+	if string(bin) != "bin" {
+		t.Errorf("binary content mismatch")
 	}
 }
 
@@ -47,11 +63,7 @@ func TestMakeTarGzEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gz, err := gzip.NewReader(bytes.NewReader(raw))
-	if err != nil {
-		t.Fatal(err)
-	}
-	tr := tar.NewReader(gz)
+	tr := tar.NewReader(mustGzip(t, raw))
 	seen := map[string]*tar.Header{}
 	for {
 		hdr, err := tr.Next()
@@ -67,16 +79,16 @@ func TestMakeTarGzEntries(t *testing.T) {
 		}
 	}
 
-	bin, ok := seen["usr/bin/mywanipd"]
+	bin, ok := seen["./usr/bin/mywanipd"]
 	if !ok {
-		t.Fatalf("usr/bin/mywanipd missing from tar")
+		t.Fatalf("./usr/bin/mywanipd missing from tar")
 	}
 	if bin.Mode != 0o755 {
 		t.Errorf("binary mode = %o, want 755", bin.Mode)
 	}
-	cfg, ok := seen["etc/config/mywanip"]
+	cfg, ok := seen["./etc/config/mywanip"]
 	if !ok {
-		t.Fatalf("etc/config/mywanip missing from tar")
+		t.Fatalf("./etc/config/mywanip missing from tar")
 	}
 	if cfg.Mode != 0o644 {
 		t.Errorf("config mode = %o, want 644", cfg.Mode)
@@ -99,10 +111,45 @@ func TestDeterministic(t *testing.T) {
 	if !bytes.Equal(first, second) {
 		t.Fatalf("tar.gz not deterministic across builds")
 	}
+}
 
-	ar1 := makeAr([]fileEntry{{"data.tar.gz", first, 0o644}})
-	ar2 := makeAr([]fileEntry{{"data.tar.gz", second, 0o644}})
-	if !bytes.Equal(ar1, ar2) {
-		t.Fatalf("ar not deterministic across builds")
+// ---- 测试辅助 ----
+
+func readTarGz(t *testing.T, raw []byte) map[string][]byte {
+	t.Helper()
+	gz, err := gzip.NewReader(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("gzip: %v", err)
 	}
+	tr := tar.NewReader(gz)
+	out := map[string][]byte{}
+	for {
+		hdr, err := tr.Next()
+		if err != nil {
+			break
+		}
+		buf := new(bytes.Buffer)
+		if _, err := buf.ReadFrom(tr); err != nil {
+			t.Fatal(err)
+		}
+		out[hdr.Name] = buf.Bytes()
+	}
+	return out
+}
+
+func mustGzip(t *testing.T, raw []byte) *gzip.Reader {
+	t.Helper()
+	gz, err := gzip.NewReader(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return gz
+}
+
+func keys(m map[string][]byte) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }

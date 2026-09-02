@@ -1,14 +1,17 @@
-// ipkbuild 是纯 Go 的 ipk 打包工具：不依赖 Docker/SDK/GNU ar，
+// ipkbuild 是纯 Go 的 ipk 打包工具：不依赖 Docker/SDK，
 // 在 macOS 上可直接生成 opkg 可安装的 .ipk 文件。
 //
-// ipk 结构 = ar 归档，固定三个成员（顺序敏感）：
+// OpenWrt 24.10（iStoreOS）的 opkg 使用 gzip+tar 格式的 ipk
+// （经典 ipkg 格式，与官方仓库一致），而非 Debian 的 ar 格式——
+// ar 格式在该 opkg 上会报 "Malformed package file"。
+// 结构：gzip(tar)，外层 tar 含三个成员（文件名带 ./ 前缀）：
 //
-//	debian-binary   内容 "2.0\n"
-//	control.tar.gz  control / conffiles / prerm
-//	data.tar.gz     安装到目标系统的文件树
+//	./debian-binary   内容 "2.0\n"
+//	./data.tar.gz     安装到目标系统的文件树
+//	./control.tar.gz  control / conffiles / prerm
 //
 // 产物确定性：tar 头统一 uid/gid=0、root、零时间戳、文件名排序；
-// gzip 不写 mtime；ar 头 mtime=0。
+// gzip 头不携带额外时间信息。
 package main
 
 import (
@@ -217,6 +220,7 @@ func totalSize(files []fileEntry) int {
 // ---------- tar.gz / ar 写入 ----------
 
 // makeTarGz 把文件列表打成确定性 tar.gz：零时间戳、root 属主、按名排序。
+// tar 成员名统一加 "./" 前缀（与 OpenWrt 官方 ipk 一致）。
 func makeTarGz(files []fileEntry) ([]byte, error) {
 	sorted := make([]fileEntry, len(files))
 	copy(sorted, files)
@@ -227,8 +231,12 @@ func makeTarGz(files []fileEntry) ([]byte, error) {
 	tw := tar.NewWriter(gw)
 
 	for _, f := range sorted {
+		name := f.name
+		if !strings.HasPrefix(name, "./") {
+			name = "./" + name
+		}
 		hdr := &tar.Header{
-			Name:    f.name,
+			Name:    name,
 			Mode:    f.mode,
 			Size:    int64(len(f.data)),
 			ModTime: time.Time{}, // 零时间戳，保证产物可复现
@@ -254,27 +262,8 @@ func makeTarGz(files []fileEntry) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// makeAr 写出 GNU 风格 ar 归档（成员均为短名，无需长名表）。
-func makeAr(members []fileEntry) []byte {
-	var out []byte
-	out = append(out, "!<arch>\n"...)
-	for _, m := range members {
-		// 60 字节定长头：name[16] mtime[12] uid[6] gid[6] mode[8] size[10] "`\n"
-		// GNU 约定：名字以 '/' 结尾再补空格（opkg/libarchive 靠这个 '/'
-		// 截断名字，缺失会把填充空格算进名字导致 "Malformed package file"）。
-		// ar 的 mode 字段含文件类型位（普通文件 0100000），与 tar 的权限位不同。
-		arMode := (m.mode & 0o777) | 0o100000
-		header := fmt.Sprintf("%-16s%-12d%-6d%-6d%-8o%-10d`\n",
-			m.name+"/", 0, 0, 0, arMode, len(m.data))
-		out = append(out, header...)
-		out = append(out, m.data...)
-		if len(m.data)%2 == 1 {
-			out = append(out, '\n') // ar 成员按偶数字节对齐填充
-		}
-	}
-	return out
-}
-
+// writeIPK 生成 gzip+tar 格式 ipk（OpenWrt 24.10 opkg 支持的格式）：
+// 外层 gzip(tar) 含 ./debian-binary、./data.tar.gz、./control.tar.gz。
 func writeIPK(path string, controlFiles, dataFiles []fileEntry) error {
 	controlTar, err := makeTarGz(controlFiles)
 	if err != nil {
@@ -284,11 +273,15 @@ func writeIPK(path string, controlFiles, dataFiles []fileEntry) error {
 	if err != nil {
 		return err
 	}
-	ipk := makeAr([]fileEntry{
+	outer := []fileEntry{
 		{"debian-binary", []byte("2.0\n"), 0o644},
-		{"control.tar.gz", controlTar, 0o644},
 		{"data.tar.gz", dataTar, 0o644},
-	})
+		{"control.tar.gz", controlTar, 0o644},
+	}
+	ipk, err := makeTarGz(outer)
+	if err != nil {
+		return err
+	}
 	return os.WriteFile(path, ipk, 0o644)
 }
 

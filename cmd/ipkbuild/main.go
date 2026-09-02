@@ -49,8 +49,8 @@ var targets = []target{
 }
 
 const (
-	pkgDaemon = "mywanipd"
-	pkgLuCI   = "luci-app-mywanip"
+	pkgDaemon  = "mywanipd"
+	pkgLuCI    = "luci-app-mywanip"
 	pkgRelease = "1" // ipk release 号
 )
 

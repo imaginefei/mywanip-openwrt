@@ -9,9 +9,13 @@ return view.extend({
 		return uci.load('mywanip');
 	},
 
-	fetchStatus: function () {
+	serviceUrl: function (path) {
 		var port = uci.get('mywanip', 'main', 'port') || '9377';
-		var url = window.location.protocol + '//' + window.location.hostname + ':' + port + '/';
+		return window.location.protocol + '//' + window.location.hostname + ':' + port + (path || '/');
+	},
+
+	fetchStatus: function () {
+		var url = this.serviceUrl('/');
 
 		var el = document.getElementById('mywanip-status');
 		if (!el) return Promise.resolve();
@@ -74,7 +78,23 @@ return view.extend({
 		return m.render().then(function (node) {
 			var statusBox = E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, _('当前状态（每 5 秒自动刷新）')),
-				E('div', { id: 'mywanip-status' }, E('em', {}, _('加载中…')))
+				E('div', { id: 'mywanip-status' }, E('em', {}, _('加载中…'))),
+				E('div', { 'style': 'margin: 12px 0 4px;' }, [
+					E('a', {
+						'class': 'btn cbi-button cbi-button-action',
+						'href': this.serviceUrl('/'), 'target': '_blank', 'rel': 'noopener'
+					}, _('在浏览器打开测试')),
+					' ',
+					E('a', {
+						'class': 'btn cbi-button cbi-button-link',
+						'href': this.serviceUrl('/ipv4'), 'target': '_blank', 'rel': 'noopener'
+					}, '/ipv4'),
+					' ',
+					E('a', {
+						'class': 'btn cbi-button cbi-button-link',
+						'href': this.serviceUrl('/ipv6'), 'target': '_blank', 'rel': 'noopener'
+					}, '/ipv6')
+				])
 			]);
 
 			poll.add(function () { return this.fetchStatus(); }.bind(this), 5);

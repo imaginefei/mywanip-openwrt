@@ -149,8 +149,10 @@ func daemonControlFiles(version, arch, maintainer string, data []fileEntry) []fi
 		"",
 	}, "\n")
 
+	// stop 的输出/错误重定向：服务从未启动过时 procd 会回
+	// "ubus call service delete ... Not found"，属于无害噪音。
 	prerm := "#!/bin/sh\n" +
-		"[ -x /etc/init.d/mywanipd ] && /etc/init.d/mywanipd stop\n" +
+		"[ -x /etc/init.d/mywanipd ] && /etc/init.d/mywanipd stop >/dev/null 2>&1\n" +
 		"exit 0\n"
 
 	return []fileEntry{

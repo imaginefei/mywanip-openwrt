@@ -10,10 +10,7 @@ return view.extend({
 	},
 
 	fetchStatus: function () {
-		var listen = uci.get('mywanip', 'main', 'listen') || ':9377';
-		// 从 ':9377' / '0.0.0.0:9377' / '[::]:9377' 中提取端口
-		var portMatch = listen.match(/\]?:(\d+)\s*$/);
-		var port = portMatch ? portMatch[1] : '9377';
+		var port = uci.get('mywanip', 'main', 'port') || '9377';
 		var url = window.location.protocol + '//' + window.location.hostname + ':' + port + '/';
 
 		var el = document.getElementById('mywanip-status');
@@ -58,20 +55,21 @@ return view.extend({
 		o.default = 'pppoe-wan';
 		o.rmempty = false;
 
-		o = s.option(form.Value, 'listen', _('监听地址'),
-			_('HTTP 监听地址，格式 host:port。<code>:9377</code> 表示双栈监听（推荐）；<code>0.0.0.0:9377</code> 仅 IPv4。注意 IPv6 地址需加方括号，如 <code>[::]:9377</code>。'));
-		o.default = ':9377';
-		o.placeholder = ':9377';
+		o = s.option(form.Value, 'port', _('HTTP 端口'),
+			_('服务监听端口（1-65535），默认 9377。'));
+		o.default = '9377';
+		o.datatype = 'port';
 		o.rmempty = false;
-		o.validate = function (section, value) {
-			value = (value || '').trim();
-			// 合法形式：:9377（双栈通配）、0.0.0.0:9377（IPv4）、[::]:9377（IPv6 方括号）
-			if (/^(\d{1,3}(\.\d{1,3}){3}|\[[0-9a-fA-F:]{2,}\])?:\d{1,5}$/.test(value)) {
-				var port = parseInt(value.match(/(\d+)$/)[1], 10);
-				if (port >= 1 && port <= 65535) return value;
-			}
-			return _('格式应为 host:port，例如 :9377、0.0.0.0:9377 或 [::]:9377');
-		};
+
+		o = s.option(form.Flag, 'bind_ipv4', _('绑定 IPv4'),
+			_('在 IPv4 上监听（0.0.0.0）。'));
+		o.default = '1';
+		o.rmempty = false;
+
+		o = s.option(form.Flag, 'bind_ipv6', _('绑定 IPv6'),
+			_('在 IPv6 上监听（[::]）。'));
+		o.default = '1';
+		o.rmempty = false;
 
 		return m.render().then(function (node) {
 			var statusBox = E('div', { 'class': 'cbi-section' }, [

@@ -103,8 +103,11 @@ func TestLoadDefaults(t *testing.T) {
 		if cfg.Interface != DefaultInterface {
 			t.Errorf("Interface = %q, want %q", cfg.Interface, DefaultInterface)
 		}
-		if cfg.Listen != DefaultListen {
-			t.Errorf("Listen = %q, want %q", cfg.Listen, DefaultListen)
+		if cfg.Port != DefaultPort {
+			t.Errorf("Port = %d, want %d", cfg.Port, DefaultPort)
+		}
+		if !cfg.BindIPv4 || !cfg.BindIPv6 {
+			t.Errorf("default binds should both be true: %+v", cfg)
 		}
 	})
 
@@ -117,7 +120,7 @@ func TestLoadDefaults(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
-		if cfg.Interface != DefaultInterface || cfg.Listen != DefaultListen {
+		if cfg.Interface != DefaultInterface || cfg.Port != DefaultPort || !cfg.BindIPv4 || !cfg.BindIPv6 {
 			t.Errorf("defaults not applied: %+v", cfg)
 		}
 	})
@@ -128,7 +131,9 @@ func TestLoadValues(t *testing.T) {
 	src := "config mywanip 'main'\n" +
 		"    option enabled '1'\n" +
 		"    option interface 'wan1'\n" +
-		"    option listen '0.0.0.0:8080'\n"
+		"    option port '8080'\n" +
+		"    option bind_ipv4 '1'\n" +
+		"    option bind_ipv6 '0'\n"
 	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +141,7 @@ func TestLoadValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if !cfg.Enabled || cfg.Interface != "wan1" || cfg.Listen != "0.0.0.0:8080" {
+	if !cfg.Enabled || cfg.Interface != "wan1" || cfg.Port != 8080 || !cfg.BindIPv4 || cfg.BindIPv6 {
 		t.Errorf("unexpected cfg: %+v", cfg)
 	}
 }
@@ -147,10 +152,10 @@ func TestLoadInvalid(t *testing.T) {
 		src  string
 	}{
 		{"bad enabled", "config mywanip 'main'\n    option enabled 'maybe'\n"},
-		{"listen no port", "config mywanip 'main'\n    option listen '0.0.0.0'\n"},
-		{"listen bare ipv6", "config mywanip 'main'\n    option listen '::9377'\n"},
-		{"listen bad port", "config mywanip 'main'\n    option listen ':99999'\n"},
-		{"listen bad host", "config mywanip 'main'\n    option listen 'nosuchhost:9377'\n"},
+		{"port not a number", "config mywanip 'main'\n    option port 'abc'\n"},
+		{"port out of range", "config mywanip 'main'\n    option port '99999'\n"},
+		{"both binds disabled", "config mywanip 'main'\n    option bind_ipv4 '0'\n    option bind_ipv6 '0'\n"},
+		{"bad bind value", "config mywanip 'main'\n    option bind_ipv4 'maybe'\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -162,16 +167,5 @@ func TestLoadInvalid(t *testing.T) {
 				t.Fatalf("expected error for %s", tc.name)
 			}
 		})
-	}
-}
-
-func TestValidateListenForms(t *testing.T) {
-	ok := []string{":9377", "[::]:9377", "0.0.0.0:9377", "127.0.0.1:9377", "[::1]:9377"}
-	for _, listen := range ok {
-		c := Default()
-		c.Listen = listen
-		if err := c.Validate(); err != nil {
-			t.Errorf("Validate(%q): %v", listen, err)
-		}
 	}
 }

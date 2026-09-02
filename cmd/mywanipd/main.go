@@ -51,7 +51,8 @@ func run(cfgPath string) error {
 		log.Printf("mywanipd is disabled in %s (option enabled '0'); exiting", cfgPath)
 		return nil
 	}
-	log.Printf("mywanipd %s starting: interface=%s listen=%s", version, cfg.Interface, cfg.Listen)
+	log.Printf("mywanipd %s starting: interface=%s port=%d bind_ipv4=%v bind_ipv6=%v",
+		version, cfg.Interface, cfg.Port, cfg.BindIPv4, cfg.BindIPv6)
 
 	srv := httpserver.New(
 		cfg,

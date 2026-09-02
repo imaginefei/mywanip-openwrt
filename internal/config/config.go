@@ -13,7 +13,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -24,9 +23,8 @@ const (
 	ConfigType = "mywanip"
 	// DefaultInterface 是未配置时读取的接口名（OpenWrt 上 PPPoE 拨号设备）。
 	DefaultInterface = "pppoe-wan"
-	// DefaultListen 是未配置时的监听地址；host 留空在 Go 里绑定通配 [::]，
-	// Linux 默认双栈，一个 socket 同时接受 IPv4/IPv6 连接。
-	DefaultListen = ":9377"
+	// DefaultPort 是未配置时的 HTTP 监听端口。
+	DefaultPort = 9377
 )
 
 // Config 是 mywanipd 的运行配置。
@@ -35,8 +33,12 @@ type Config struct {
 	Enabled bool
 	// Interface 是要读取地址的网络接口名，如 pppoe-wan。
 	Interface string
-	// Listen 是 HTTP 监听地址，host:port 形式（如 :9377、0.0.0.0:8080、[::1]:9377）。
-	Listen string
+	// Port 是 HTTP 监听端口。
+	Port int
+	// BindIPv4 / BindIPv6 控制是否在 IPv4(0.0.0.0) / IPv6([::]) 上监听；
+	// 两者都开时绑定双栈通配地址（单 socket）。
+	BindIPv4 bool
+	BindIPv6 bool
 }
 
 // Default 返回带默认值的配置。
@@ -44,7 +46,9 @@ func Default() *Config {
 	return &Config{
 		Enabled:   false,
 		Interface: DefaultInterface,
-		Listen:    DefaultListen,
+		Port:      DefaultPort,
+		BindIPv4:  true,
+		BindIPv6:  true,
 	}
 }
 
@@ -53,17 +57,11 @@ func (c *Config) Validate() error {
 	if strings.TrimSpace(c.Interface) == "" {
 		return fmt.Errorf("interface must not be empty")
 	}
-	host, portStr, err := net.SplitHostPort(c.Listen)
-	if err != nil {
-		return fmt.Errorf("invalid listen %q (use host:port, e.g. :9377 or [::]:9377; IPv6 address must be bracketed): %w", c.Listen, err)
+	if c.Port < 1 || c.Port > 65535 {
+		return fmt.Errorf("invalid port %d: must be 1-65535", c.Port)
 	}
-	port, err := strconv.Atoi(portStr)
-	if err != nil || port < 1 || port > 65535 {
-		return fmt.Errorf("invalid listen %q: port must be 1-65535", c.Listen)
-	}
-	// host 为空（通配）或合法 IP 均可；net.ParseIP 对空串返回 nil，需单独放行。
-	if host != "" && net.ParseIP(host) == nil {
-		return fmt.Errorf("invalid listen %q: host must be an IP address or empty", c.Listen)
+	if !c.BindIPv4 && !c.BindIPv6 {
+		return fmt.Errorf("at least one of bind_ipv4/bind_ipv6 must be enabled")
 	}
 	return nil
 }
@@ -99,8 +97,26 @@ func Load(path string) (*Config, error) {
 	if v, present := opts["interface"]; present && strings.TrimSpace(v) != "" {
 		cfg.Interface = v
 	}
-	if v, present := opts["listen"]; present && strings.TrimSpace(v) != "" {
-		cfg.Listen = v
+	if v, present := opts["port"]; present && strings.TrimSpace(v) != "" {
+		p, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil {
+			return nil, fmt.Errorf("invalid option port=%q: must be a number", v)
+		}
+		cfg.Port = p
+	}
+	if v, present := opts["bind_ipv4"]; present {
+		b, err := parseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid option bind_ipv4=%q: %w", v, err)
+		}
+		cfg.BindIPv4 = b
+	}
+	if v, present := opts["bind_ipv6"]; present {
+		b, err := parseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid option bind_ipv6=%q: %w", v, err)
+		}
+		cfg.BindIPv6 = b
 	}
 
 	if err := cfg.Validate(); err != nil {

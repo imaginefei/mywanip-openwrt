@@ -69,20 +69,14 @@ curl http://192.168.1.1:9377/
 
 ```ini
 config mywanip 'main'
-    option enabled '0'          # 1 启用服务；装包默认 0（不自动起服务）
+    option enabled '0'           # 1 启用服务；装包默认 0（不自动起服务）
     option interface 'pppoe-wan' # 读取地址的接口设备名
-    option listen ':9377'       # HTTP 监听地址，host:port
+    option port '9377'           # HTTP 监听端口
+    option bind_ipv4 '1'         # 在 IPv4 上监听（0.0.0.0）
+    option bind_ipv6 '1'         # 在 IPv6 上监听（[::]）
 ```
 
-`listen` 写法：
-
-| 值 | 含义 |
-| --- | --- |
-| `:9377` 或 `[::]:9377` | 双栈监听（默认/推荐） |
-| `0.0.0.0:9377` | 仅 IPv4 |
-| `127.0.0.1:9377` | 仅本机 |
-
-注意裸 `::9377` 是非法写法（IPv6 必须加方括号），程序会启动报错并提示。
+绑定方式由两个开关组合决定：两个都开（默认）= 双栈监听；只开一个 = 仅对应协议族；两个都关 = 程序拒绝启动并报错。
 
 ## 从源码构建（macOS/Linux）
 
@@ -104,7 +98,7 @@ make test      # 单元测试
 
 ```sh
 go run ./cmd/mywanipd -config dev/mywanip.conf.example
-# 配置里 interface=en0、listen=127.0.0.1:9377
+# 配置里 interface=en0、port=9377
 curl http://127.0.0.1:9377/
 ```
 

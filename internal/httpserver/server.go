@@ -13,13 +13,27 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"syscall"
 	"time"
 
 	"mywanip/internal/config"
 )
+
+// setV6Only 在 socket 上置 IPV6_V6ONLY=1：仅勾选 IPv6 时，
+// 监听 [::] 不接受 IPv4-mapped 连接，也不会与 IPv4 监听冲突。
+func setV6Only(_, _ string, c syscall.RawConn) error {
+	var setErr error
+	if err := c.Control(func(fd uintptr) {
+		setErr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IPV6, syscall.IPV6_V6ONLY, 1)
+	}); err != nil {
+		return err
+	}
+	return setErr
+}
 
 // IPFunc 返回某个 IP 版本的地址，失败返回 error。
 type IPFunc func() (net.IP, error)
@@ -28,6 +42,7 @@ type IPFunc func() (net.IP, error)
 type Server struct {
 	httpServer *http.Server
 	handler    http.Handler
+	cfg        *config.Config
 	version    string
 	ipv4       IPFunc
 	ipv6       IPFunc
@@ -42,6 +57,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // 测试时可注入桩函数。
 func New(cfg *config.Config, version string, ipv4, ipv6 IPFunc) *Server {
 	s := &Server{
+		cfg:     cfg,
 		version: version,
 		ipv4:    ipv4,
 		ipv6:    ipv6,
@@ -54,7 +70,6 @@ func New(cfg *config.Config, version string, ipv4, ipv6 IPFunc) *Server {
 	s.handler = mux
 
 	s.httpServer = &http.Server{
-		Addr:              cfg.Listen,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
@@ -63,12 +78,36 @@ func New(cfg *config.Config, version string, ipv4, ipv6 IPFunc) *Server {
 
 // ListenAndServe 阻塞运行直到服务关闭。
 func (s *Server) ListenAndServe() error {
-	log.Printf("mywanipd %s listening on %s", s.version, s.httpServer.Addr)
-	err := s.httpServer.ListenAndServe()
+	ln, err := s.buildListener()
+	if err != nil {
+		return err
+	}
+	log.Printf("mywanipd %s listening on :%d (ipv4=%v ipv6=%v)",
+		s.version, s.cfg.Port, s.cfg.BindIPv4, s.cfg.BindIPv6)
+	err = s.httpServer.Serve(ln)
 	if err == http.ErrServerClosed {
 		return nil
 	}
 	return err
+}
+
+// buildListener 按绑定开关创建监听器：
+//   - v4+v6：绑定 :port（Linux 双栈单 socket）
+//   - 仅 v4：tcp4 绑定 0.0.0.0
+//   - 仅 v6：tcp6 绑定 [::] 并置 IPV6_V6ONLY（避免占用 v4 端口）
+func (s *Server) buildListener() (net.Listener, error) {
+	addr := fmt.Sprintf(":%d", s.cfg.Port)
+	switch {
+	case s.cfg.BindIPv4 && s.cfg.BindIPv6:
+		return net.Listen("tcp", addr)
+	case s.cfg.BindIPv4:
+		return net.Listen("tcp4", "0.0.0.0"+addr)
+	case s.cfg.BindIPv6:
+		lc := net.ListenConfig{Control: setV6Only}
+		return lc.Listen(context.Background(), "tcp6", "[::]"+addr)
+	default:
+		return nil, fmt.Errorf("no bind address enabled (enable bind_ipv4 and/or bind_ipv6)")
+	}
 }
 
 // Shutdown 优雅关闭，超时由 ctx 控制。

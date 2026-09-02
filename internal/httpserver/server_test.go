@@ -22,9 +22,8 @@ func stubIP(s string) IPFunc {
 }
 
 func newTestServer(v4, v6 string) *Server {
-	cfg := config.Default()
-	cfg.Listen = "127.0.0.1:0"
-	return New(cfg, "test", stubIP(v4), stubIP(v6))
+	// httptest 直接驱动 handler，不会真正监听端口，用默认配置即可
+	return New(config.Default(), "test", stubIP(v4), stubIP(v6))
 }
 
 func TestIPv4Endpoint(t *testing.T) {

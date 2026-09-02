@@ -20,16 +20,37 @@ return view.extend({
 		return uci.load('mywanip');
 	},
 
+	// 「保存并应用」：先走标准的 保存 UCI + apply(reload_config) 流程，
+	// 完成后按「启用服务」状态自动启停——procd 触发器只在服务经 procd
+	// 启动后才注册，从未启动/被停止时 reload_config 不会拉起服务，
+	// 所以这里必须显式 init action。
+	handleSaveApply: function (ev, mode) {
+		var view = this;
+		return this.super('handleSaveApply', [ev, mode]).then(function () {
+			var enabled = uci.get('mywanip', 'main', 'enabled') == '1';
+			if (enabled) {
+				return view.initAction('enable', true).then(function () {
+					return view.initAction('restart');
+				});
+			}
+			return view.initAction('stop');
+		}).then(function () {
+			setTimeout(function () { view.fetchStatus(); }, 2000);
+		});
+	},
+
 	serviceUrl: function (path) {
 		var port = uci.get('mywanip', 'main', 'port') || '9377';
 		return window.location.protocol + '//' + window.location.hostname + ':' + port + (path || '/');
 	},
 
 	// 调用 /etc/init.d/mywanipd <action>（enable/disable/start/stop/restart）
-	initAction: function (action) {
+	initAction: function (action, silent) {
 		var view = this;
 		return callInitAction('mywanipd', action).then(function () {
-			ui.addNotification(null, E('p', _('操作已执行：%s').format(action)));
+			if (!silent) {
+				ui.addNotification(null, E('p', _('操作已执行：%s').format(action)));
+			}
 			setTimeout(function () { view.fetchStatus(); }, 1500);
 		}).catch(function (e) {
 			ui.addNotification(null, E('p', _('操作失败：%s').format(e || '无权限')));
@@ -137,7 +158,7 @@ return view.extend({
 					}, '/ipv6')
 				]),
 				E('p', { 'style': 'color: #888; margin: 4px 0;' },
-					_('提示：修改配置后先「保存并应用」，再点「启动 / 重启服务」生效；「启动」会同时设置开机自启。'))
+					_('提示：「保存并应用」会按启用状态自动启停服务；按钮可手动控制；「启动」同时设置开机自启。'))
 			]);
 
 			poll.add(function () { return this.fetchStatus(); }.bind(this), 5);

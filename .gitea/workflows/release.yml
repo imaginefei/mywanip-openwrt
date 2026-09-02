@@ -1,0 +1,61 @@
+# Gitea Actions 发布工作流：推送 v* tag 自动构建并创建 Release
+#
+# 与 GitHub 版（.github/workflows/release.yml）功能一致，差异点：
+#   - Gitea 从 .gitea/workflows/ 读取工作流
+#   - 制品上传走 Gitea API（curl + 自带 GITHUB_TOKEN），不依赖第三方 action
+#
+# 前提（服务器管理员配置）：
+#   1. Gitea >= 1.21，app.ini 中 [actions] ENABLED = true
+#   2. 已注册 act_runner（管理后台 -> Actions -> Runners）
+#   3. 仓库设置 -> 高级/Actions -> 启用仓库 Actions
+name: release
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: 单元测试
+        run: go test ./...
+
+      - name: 交叉编译与打包
+        run: |
+          make build
+          make ipk
+
+      - name: 创建 Release 并上传 ipk 制品
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}   # Gitea 自动注入的仓库 token（兼容名）
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          API="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/releases"
+
+          # 创建 Release；已存在则取现有 id（幂等，可重跑）
+          RELEASE_ID=$(curl -sSf -X POST "$API" \
+            -H "Authorization: token ${TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"${TAG}\",\"name\":\"${TAG}\",\"body\":\"Release ${TAG}\"}" \
+            | jq -r '.id // empty')
+          if [ -z "${RELEASE_ID}" ]; then
+            RELEASE_ID=$(curl -sSf "${API}/tags/${TAG}" \
+              -H "Authorization: token ${TOKEN}" | jq -r '.id')
+          fi
+          echo "release id: ${RELEASE_ID}"
+
+          # 上传全部 ipk（同名覆盖）
+          for f in release/*/*.ipk; do
+            NAME=$(basename "${f}")
+            curl -sSf -X POST "${API}/${RELEASE_ID}/assets?name=${NAME}" \
+              -H "Authorization: token ${TOKEN}" \
+              -F "attachment=@${f}"
+            echo "uploaded: ${NAME}"
+          done

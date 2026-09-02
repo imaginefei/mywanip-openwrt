@@ -1,0 +1,14 @@
+{
+	"admin/services/mywanip": {
+		"title": "My WAN IP",
+		"order": 60,
+		"action": {
+			"type": "view",
+			"path": "mywanip/mywanip"
+		},
+		"depends": {
+			"acl": [ "luci-app-mywanip" ],
+			"uci": [ "mywanip" ]
+		}
+	}
+}

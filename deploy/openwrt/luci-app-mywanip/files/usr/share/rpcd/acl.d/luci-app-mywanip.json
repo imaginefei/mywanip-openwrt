@@ -1,0 +1,11 @@
+{
+	"luci-app-mywanip": {
+		"description": "Grant UCI access for luci-app-mywanip",
+		"read": {
+			"uci": [ "mywanip" ]
+		},
+		"write": {
+			"uci": [ "mywanip" ]
+		}
+	}
+}

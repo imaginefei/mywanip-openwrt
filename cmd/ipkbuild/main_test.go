@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // TestWriteIPKStructure 验证 ipk 为 gzip+tar 格式（OpenWrt opkg 实际支持的格式），
@@ -15,7 +16,7 @@ func TestWriteIPKStructure(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.ipk")
 	control := []fileEntry{{"control", []byte("Package: x\n"), 0o644}}
 	data := []fileEntry{{"usr/bin/x", []byte("bin"), 0o755}}
-	if err := writeIPK(path, control, data); err != nil {
+	if err := writeIPK(path, control, data, time.Time{}); err != nil {
 		t.Fatalf("writeIPK: %v", err)
 	}
 	raw, err := os.ReadFile(path)
@@ -65,7 +66,7 @@ func TestLuciPackageContainsDeepDir(t *testing.T) {
 	files := []fileEntry{
 		{"www/luci-static/resources/view/mywanip/mywanip.js", []byte("js"), 0o644},
 	}
-	raw, err := makeTarGz(files)
+	raw, err := makeTarGz(files, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +82,7 @@ func TestMakeTarGzEntries(t *testing.T) {
 		{"usr/bin/mywanipd", []byte("binary-bytes"), 0o755},
 		{"etc/config/mywanip", []byte("config"), 0o644},
 	}
-	raw, err := makeTarGz(files)
+	raw, err := makeTarGz(files, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,16 +119,36 @@ func TestMakeTarGzEntries(t *testing.T) {
 	}
 }
 
+// TestModTimeApplied：传入 commit 时间时，tar 成员时间应为该时间（而非 1970）。
+func TestModTimeApplied(t *testing.T) {
+	mt := time.Unix(1700000000, 0) // 固定值
+	files := []fileEntry{{"etc/config/mywanip", []byte("cfg"), 0o644}}
+	raw, err := makeTarGz(files, mt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := tar.NewReader(mustGzip(t, raw))
+	for {
+		hdr, err := tr.Next()
+		if err != nil {
+			break
+		}
+		if !hdr.ModTime.Equal(mt) {
+			t.Errorf("%s: ModTime = %v, want %v", hdr.Name, hdr.ModTime, mt)
+		}
+	}
+}
+
 func TestDeterministic(t *testing.T) {
 	files := []fileEntry{
 		{"b.txt", []byte("second"), 0o644},
 		{"a.txt", []byte("first"), 0o644},
 	}
-	first, err := makeTarGz(files)
+	first, err := makeTarGz(files, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := makeTarGz(files)
+	second, err := makeTarGz(files, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}

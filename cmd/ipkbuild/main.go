@@ -70,7 +70,13 @@ func main() {
 		ver = gitVersion()
 	}
 	ver = strings.TrimPrefix(ver, "v")
-	log.Printf("ipkbuild: version %s", ver)
+	// 文件时间戳用当前 commit 时间（可复现：同 commit 字节一致；
+	// 又不会显示为 1970）。取不到 git 时退回零时间戳。
+	modTime := time.Time{}
+	if epoch, err := gitCommitEpoch(); err == nil {
+		modTime = time.Unix(epoch, 0)
+	}
+	log.Printf("ipkbuild: version %s (file mtime %s)", ver, modTime.Format("2006-01-02"))
 
 	out := filepath.Join(*outDir, ver)
 	if err := os.MkdirAll(out, 0o755); err != nil {
@@ -86,7 +92,7 @@ func main() {
 		controlFiles := daemonControlFiles(ver, t.opkgArch, *maintainer, dataFiles)
 
 		path := filepath.Join(out, fmt.Sprintf("%s_%s-%s_%s.ipk", pkgDaemon, ver, pkgRelease, t.opkgArch))
-		if err := writeIPK(path, controlFiles, dataFiles); err != nil {
+		if err := writeIPK(path, controlFiles, dataFiles, modTime); err != nil {
 			log.Fatalf("write %s: %v", path, err)
 		}
 		log.Printf("built %s", path)
@@ -99,7 +105,7 @@ func main() {
 	}
 	luciControl := luciControlFiles(ver, *maintainer, luciData)
 	path := filepath.Join(out, fmt.Sprintf("%s_%s-%s_all.ipk", pkgLuCI, ver, pkgRelease))
-	if err := writeIPK(path, luciControl, luciData); err != nil {
+	if err := writeIPK(path, luciControl, luciData, modTime); err != nil {
 		log.Fatalf("write %s: %v", path, err)
 	}
 	log.Printf("built %s", path)
@@ -219,11 +225,12 @@ func totalSize(files []fileEntry) int {
 
 // ---------- tar.gz / ar 写入 ----------
 
-// makeTarGz 把文件列表打成确定性 tar.gz：零时间戳、root 属主、按名排序。
-// tar 成员名统一加 "./" 前缀（与 OpenWrt 官方 ipk 一致）。
-// 必须为每个父目录写入目录条目——opkg 解压时不会自动创建目录，
-// 缺失目录项会导致 wfopen: ... No such file or directory。
-func makeTarGz(files []fileEntry) ([]byte, error) {
+// makeTarGz 把文件列表打成 tar.gz：root 属主、按名排序、统一 modTime。
+// modTime 取当前 git commit 时间——同一 commit 产物字节一致（可复现），
+// 文件日期又不会显示为 1970。tar 成员名统一加 "./" 前缀（与 OpenWrt
+// 官方 ipk 一致）。必须为每个父目录写入目录条目——opkg 解压时不会自动
+// 创建目录，缺失目录项会导致 wfopen: ... No such file or directory。
+func makeTarGz(files []fileEntry, modTime time.Time) ([]byte, error) {
 	sorted := make([]fileEntry, len(files))
 	copy(sorted, files)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].name < sorted[j].name })
@@ -246,13 +253,13 @@ func makeTarGz(files []fileEntry) ([]byte, error) {
 	}
 	sort.Strings(dirs)
 	for _, d := range dirs {
-		if err := writeTarHeader(tw, d, 0o755, tar.TypeDir, nil); err != nil {
+		if err := writeTarHeader(tw, d, 0o755, tar.TypeDir, nil, modTime); err != nil {
 			return nil, err
 		}
 	}
 
 	for _, f := range sorted {
-		if err := writeTarHeader(tw, "./"+f.name, f.mode, tar.TypeReg, f.data); err != nil {
+		if err := writeTarHeader(tw, "./"+f.name, f.mode, tar.TypeReg, f.data, modTime); err != nil {
 			return nil, err
 		}
 	}
@@ -279,18 +286,18 @@ func parentDirs(name string) []string {
 	return dirs
 }
 
-func writeTarHeader(tw *tar.Writer, name string, mode int64, typ byte, data []byte) error {
+func writeTarHeader(tw *tar.Writer, name string, mode int64, typ byte, data []byte, modTime time.Time) error {
 	hdr := &tar.Header{
-		Name:    name,
-		Mode:    mode,
-		Size:    int64(len(data)),
-		ModTime: time.Time{}, // 零时间戳，保证产物可复现
-		Uid:     0,
-		Gid:     0,
-		Uname:   "root",
-		Gname:   "root",
+		Name:     name,
+		Mode:     mode,
+		Size:     int64(len(data)),
+		ModTime:  modTime,
+		Uid:      0,
+		Gid:      0,
+		Uname:    "root",
+		Gname:    "root",
 		Typeflag: typ,
-		Format:  tar.FormatUSTAR,
+		Format:   tar.FormatUSTAR,
 	}
 	if err := tw.WriteHeader(hdr); err != nil {
 		return err
@@ -304,12 +311,12 @@ func writeTarHeader(tw *tar.Writer, name string, mode int64, typ byte, data []by
 
 // writeIPK 生成 gzip+tar 格式 ipk（OpenWrt 24.10 opkg 支持的格式）：
 // 外层 gzip(tar) 含 ./debian-binary、./data.tar.gz、./control.tar.gz。
-func writeIPK(path string, controlFiles, dataFiles []fileEntry) error {
-	controlTar, err := makeTarGz(controlFiles)
+func writeIPK(path string, controlFiles, dataFiles []fileEntry, modTime time.Time) error {
+	controlTar, err := makeTarGz(controlFiles, modTime)
 	if err != nil {
 		return err
 	}
-	dataTar, err := makeTarGz(dataFiles)
+	dataTar, err := makeTarGz(dataFiles, modTime)
 	if err != nil {
 		return err
 	}
@@ -318,11 +325,24 @@ func writeIPK(path string, controlFiles, dataFiles []fileEntry) error {
 		{"data.tar.gz", dataTar, 0o644},
 		{"control.tar.gz", controlTar, 0o644},
 	}
-	ipk, err := makeTarGz(outer)
+	ipk, err := makeTarGz(outer, modTime)
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, ipk, 0o644)
+}
+
+// gitCommitEpoch 返回 HEAD 的提交时间（Unix 秒），用作 tar 文件时间戳。
+func gitCommitEpoch() (int64, error) {
+	out, err := exec.Command("git", "show", "-s", "--format=%ct", "HEAD").Output()
+	if err != nil {
+		return 0, err
+	}
+	epoch, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return epoch, nil
 }
 
 func gitVersion() string {

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 mywanipd 是 OpenWrt/iStoreOS 上的 WAN 口 IP 查询服务：Go 守护进程读取指定网卡（默认 PPPoE 的 `pppoe-wan`）上的 IPv4/IPv6 地址并通过 HTTP 暴露（`/ipv4`、`/ipv6` 纯文本，`/` JSON 汇总），配套一个 LuCI 配置页。目标设备是 iStoreOS 24.10.8（基于 OpenWrt 24.10），开发机为 macOS（Apple Silicon）。
 
-**面向用户的产出物（commit message、代码注释、文档）使用中文。** conventional commit 前缀（feat/fix/build/chore/docs）保留英文，描述和正文用中文。
+**面向用户的产出物（commit message、代码注释、文档）使用中文。** conventional commit 前缀（feat/fix/build/chore/docs）保留英文，描述和正文用中文。**commit 不加任何 AI 署名尾注（如 Co-Authored-By）**，作者就是维护者本人的 git 身份。
 
 ## 维护者背景与协作方式
 

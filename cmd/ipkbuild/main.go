@@ -260,10 +260,12 @@ func makeAr(members []fileEntry) []byte {
 	out = append(out, "!<arch>\n"...)
 	for _, m := range members {
 		// 60 字节定长头：name[16] mtime[12] uid[6] gid[6] mode[8] size[10] "`\n"
+		// GNU 约定：名字以 '/' 结尾再补空格（opkg/libarchive 靠这个 '/'
+		// 截断名字，缺失会把填充空格算进名字导致 "Malformed package file"）。
 		// ar 的 mode 字段含文件类型位（普通文件 0100000），与 tar 的权限位不同。
 		arMode := (m.mode & 0o777) | 0o100000
 		header := fmt.Sprintf("%-16s%-12d%-6d%-6d%-8o%-10d`\n",
-			m.name, 0, 0, 0, arMode, len(m.data))
+			m.name+"/", 0, 0, 0, arMode, len(m.data))
 		out = append(out, header...)
 		out = append(out, m.data...)
 		if len(m.data)%2 == 1 {

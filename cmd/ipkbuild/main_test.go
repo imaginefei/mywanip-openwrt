@@ -31,6 +31,10 @@ func TestMakeArStructure(t *testing.T) {
 	if !strings.HasSuffix(header, "`\n") {
 		t.Fatalf("ar header not terminated by backtick-newline: %q", header)
 	}
+	// GNU 约定：名字字段必须以 '/' 结尾（opkg/libarchive 靠它截断名字）
+	if !strings.HasPrefix(header, "debian-binary/") {
+		t.Fatalf("ar name field must be slash-terminated (GNU convention): %q", header[:16])
+	}
 }
 
 func TestMakeTarGzEntries(t *testing.T) {

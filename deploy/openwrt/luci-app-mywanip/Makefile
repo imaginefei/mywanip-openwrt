@@ -10,7 +10,7 @@ PKG_NAME:=luci-app-mywanip
 PKG_VERSION:=1.0.0
 PKG_RELEASE:=1
 
-LUCI_TITLE:=LuCI page for mywanipd (My WAN IP)
+LUCI_TITLE:=LuCI page for mywanipd (WAN IP query)
 LUCI_PKGARCH:=all
 LUCI_DEPENDS:=+luci-base +mywanipd
 

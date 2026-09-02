@@ -45,7 +45,7 @@ curl http://192.168.1.1:9377/
    opkg install /tmp/mywanipd_*_<arch>.ipk /tmp/luci-app-mywanip_*_all.ipk
    ```
 3. 启用（二选一）：
-   - LuCI → 服务 → My WAN IP → 勾选「启用服务」→ 保存并应用
+   - LuCI → 服务 → 外网IP查询 → 勾选「启用服务」→ 保存并应用
    - 命令行：
      ```sh
      uci set mywanip.main.enabled='1'

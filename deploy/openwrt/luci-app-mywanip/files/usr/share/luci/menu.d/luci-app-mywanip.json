@@ -1,6 +1,6 @@
 {
 	"admin/services/mywanip": {
-		"title": "My WAN IP",
+		"title": "外网IP查询",
 		"order": 60,
 		"action": {
 			"type": "view",

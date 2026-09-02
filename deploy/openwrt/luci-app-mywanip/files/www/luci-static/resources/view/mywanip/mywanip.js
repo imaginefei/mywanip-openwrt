@@ -42,7 +42,7 @@ return view.extend({
 		var m, s, o;
 
 		m = new form.Map('mywanip',
-			_('My WAN IP'),
+			_('外网IP查询'),
 			_('HTTP 服务返回指定接口的 IPv4/IPv6 地址。接口路径：<code>/ipv4</code>、<code>/ipv6</code>（纯文本）与 <code>/</code>（JSON 汇总）。'));
 
 		s = m.section(form.TypedSection, 'mywanip');
@@ -64,11 +64,13 @@ return view.extend({
 		o.placeholder = ':9377';
 		o.rmempty = false;
 		o.validate = function (section, value) {
-			if (/(^\[?[0-9a-fA-F:]*\]?:\d{1,5}$)|(^\d+\.\d+\.\d+\.\d+:\d{1,5}$)|(^:\d{1,5}$)/.test(value)) {
+			value = (value || '').trim();
+			// 合法形式：:9377（双栈通配）、0.0.0.0:9377（IPv4）、[::]:9377（IPv6 方括号）
+			if (/^(\d{1,3}(\.\d{1,3}){3}|\[[0-9a-fA-F:]{2,}\])?:\d{1,5}$/.test(value)) {
 				var port = parseInt(value.match(/(\d+)$/)[1], 10);
 				if (port >= 1 && port <= 65535) return value;
 			}
-			return _('格式应为 host:port，例如 :9377 或 0.0.0.0:9377');
+			return _('格式应为 host:port，例如 :9377、0.0.0.0:9377 或 [::]:9377');
 		};
 
 		return m.render().then(function (node) {

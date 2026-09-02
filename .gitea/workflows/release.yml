@@ -6,12 +6,12 @@
 #
 # 与 GitHub 版（.github/workflows/release.yml）功能一致，差异点：
 #   - Gitea 从 .gitea/workflows/ 读取工作流
-#   - 制品上传走 Gitea API（curl + 自带 GITHUB_TOKEN），不依赖第三方 action
+#   - 制品上传用 Gitea 官方 CLI（tea）：创建/补传 Release 附件，幂等可重跑
 #
-# 前提（服务器管理员配置）：
-#   1. Gitea >= 1.21，app.ini 中 [actions] ENABLED = true
-#   2. 已注册 act_runner（管理后台 -> Actions -> Runners）
-#   3. 仓库设置 -> 高级/Actions -> 启用仓库 Actions
+# 前提：
+#   1. Gitea >= 1.21，Actions 默认启用
+#   2. 已注册 runner（管理后台 -> Actions -> Runners）
+#   3. 仓库设置 -> 启用仓库 Actions
 name: release
 
 on:
@@ -43,36 +43,37 @@ jobs:
           make build
           make ipk
 
-      - name: 创建 Release 并上传 ipk 制品
+      - name: 用 tea CLI 创建 Release 并上传 ipk
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}   # Gitea 自动注入的仓库 token（兼容名）
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          API="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/releases"
+          set -e
 
-          # 创建 Release；已存在则取现有 id（幂等，可重跑）
-          RELEASE_ID=$(curl -sSf -X POST "$API" \
-            -H "Authorization: token ${TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "{\"tag_name\":\"${TAG}\",\"name\":\"${TAG}\",\"body\":\"Release ${TAG}\"}" \
-            | jq -r '.id // empty')
-          if [ -z "${RELEASE_ID}" ]; then
-            RELEASE_ID=$(curl -sSf "${API}/tags/${TAG}" \
-              -H "Authorization: token ${TOKEN}" | jq -r '.id')
+          # 1. 下载 Gitea 官方 CLI: tea（下载源 gitea.com）
+          curl -sL --max-time 300 -o /tmp/tea \
+            "https://gitea.com/gitea/tea/releases/download/v0.15.1/tea-0.15.1-linux-amd64"
+          chmod +x /tmp/tea
+          /tmp/tea --version
+
+          # 2. 登录（url 需与 actions/checkout 的 remote 一致 = 实例地址）
+          /tmp/tea login add --name ci \
+            --url "${GITHUB_SERVER_URL}" --token "${TOKEN}" --no-version-check
+
+          # 3. 创建 Release；已存在则忽略（幂等，可重跑）
+          if ! /tmp/tea releases create "${TAG}" --title "${TAG}" --note "Release ${TAG}"; then
+            echo "== Release ${TAG} 已存在，跳过创建 =="
           fi
-          echo "release id: ${RELEASE_ID}"
 
-          # 上传全部 ipk；已存在同名制品则跳过（重跑幂等）
-          EXISTING=$(curl -sSf "${API}/${RELEASE_ID}/assets" \
-            -H "Authorization: token ${TOKEN}" | jq -r '.[].name')
+          # 4. 补传缺失的 ipk（已有同名附件则跳过）
+          EXISTING=$(/tmp/tea releases assets list "${TAG}" -o json | jq -r '.[].name')
           for f in release/*/*.ipk; do
             NAME=$(basename "${f}")
             if echo "${EXISTING}" | grep -qx "${NAME}"; then
               echo "skip (已存在): ${NAME}"
               continue
             fi
-            curl -sSf -X POST "${API}/${RELEASE_ID}/assets?name=${NAME}" \
-              -H "Authorization: token ${TOKEN}" \
-              -F "attachment=@${f}"
+            /tmp/tea releases assets create "${TAG}" "${f}"
             echo "uploaded: ${NAME}"
           done
+          echo "== 全部完成 =="

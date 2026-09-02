@@ -33,7 +33,7 @@ go test ./internal/ipsource/ -run TestIsValidIPv6 -v
 go test ./cmd/ipkbuild/ -v
 
 # 带版本号构建（release 用）：代码全部提交后
-git tag v1.0.0 && make clean && make build && make ipk   # 产物落在 release/v1.0.0/
+git tag v1.0.0 && make clean && make build && make ipk   # 产物落在 release/1.0.0/（ipkbuild 去掉 v 前缀）
 ```
 
 环境前提：Go 1.24+；若 `go version` 报 shim 错误，跑 `goenv rehash` 修复。

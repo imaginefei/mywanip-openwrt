@@ -1,0 +1,37 @@
+# 发布工作流：推送 v* tag 后自动构建并发布 Release
+#
+# 流程：checkout → 装 Go → 测试 → 交叉编译 → 打 ipk →
+#       自动创建 Release 并把 release/ 下的 ipk 全部挂为制品。
+# 产物版本号由 git describe 自动取得（即 tag 本身），与本地构建一致。
+name: release
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: 单元测试
+        run: go test ./...
+
+      - name: 交叉编译与打包
+        run: |
+          make build
+          make ipk
+
+      - name: 创建 Release 并上传 ipk 制品
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/**/*.ipk
+          generate_release_notes: true

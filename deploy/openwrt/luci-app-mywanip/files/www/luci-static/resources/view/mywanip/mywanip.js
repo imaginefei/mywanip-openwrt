@@ -3,6 +3,14 @@
 'require form';
 'require uci';
 'require poll';
+'require rpc';
+'require ui';
+
+var callInitAction = rpc.declare({
+	object: 'file',
+	method: 'exec',
+	params: ['command', 'args']
+});
 
 return view.extend({
 	load: function () {
@@ -12,6 +20,18 @@ return view.extend({
 	serviceUrl: function (path) {
 		var port = uci.get('mywanip', 'main', 'port') || '9377';
 		return window.location.protocol + '//' + window.location.hostname + ':' + port + (path || '/');
+	},
+
+	// 调用 /etc/init.d/mywanipd <args...>，完成后刷新状态区
+	initAction: function (args) {
+		var view = this;
+		return callInitAction('/etc/init.d/mywanipd', args).then(function (res) {
+			if (res && res.code === 0) {
+				setTimeout(function () { view.fetchStatus(); }, 1500);
+			} else {
+				ui.addNotification(null, E('p', _('操作失败：%s').format((res && res.stderr) ? res.stderr : '无权限')));
+			}
+		});
 	},
 
 	fetchStatus: function () {
@@ -80,6 +100,25 @@ return view.extend({
 				E('h3', {}, _('当前状态（每 5 秒自动刷新）')),
 				E('div', { id: 'mywanip-status' }, E('em', {}, _('加载中…'))),
 				E('div', { 'style': 'margin: 12px 0 4px;' }, [
+					E('button', {
+						'class': 'btn cbi-button cbi-button-positive',
+						'click': function (ev) {
+							ev.preventDefault();
+							// enable（开机自启）后 restart；要求页面已勾选「启用服务」并保存
+							this.initAction(['enable']).then(function () {
+								return this.initAction(['restart']);
+							}.bind(this));
+						}.bind(this)
+					}, _('启动 / 重启服务')),
+					' ',
+					E('button', {
+						'class': 'btn cbi-button cbi-button-negative',
+						'click': function (ev) {
+							ev.preventDefault();
+							this.initAction(['stop']);
+						}.bind(this)
+					}, _('停止服务')),
+					' ',
 					E('a', {
 						'class': 'btn cbi-button cbi-button-action',
 						'href': this.serviceUrl('/'), 'target': '_blank', 'rel': 'noopener'
@@ -94,7 +133,9 @@ return view.extend({
 						'class': 'btn cbi-button cbi-button-link',
 						'href': this.serviceUrl('/ipv6'), 'target': '_blank', 'rel': 'noopener'
 					}, '/ipv6')
-				])
+				]),
+				E('p', { 'style': 'color: #888; margin: 4px 0;' },
+					_('提示：修改配置后先「保存并应用」，再点「启动 / 重启服务」生效；「启动」会同时设置开机自启。'))
 			]);
 
 			poll.add(function () { return this.fetchStatus(); }.bind(this), 5);

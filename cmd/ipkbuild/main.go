@@ -149,7 +149,14 @@ func daemonControlFiles(version, arch, maintainer string, data []fileEntry) []fi
 		"",
 	}, "\n")
 
-	// stop 的输出/错误重定向：服务从未启动过时 procd 会回
+	// postinst：注册开机自启（创建 rc.d 链接）。此时默认 enabled=0，
+	// start_service 的门控会让服务不真正启动；用户在页面启用后点
+	// 「启动/重启」或重启路由即生效。
+	postinst := "#!/bin/sh\n" +
+		"[ -x /etc/init.d/mywanipd ] && /etc/init.d/mywanipd enable >/dev/null 2>&1\n" +
+		"exit 0\n"
+
+	// prerm：stop 的输出/错误重定向——服务从未启动过时 procd 会回
 	// "ubus call service delete ... Not found"，属于无害噪音。
 	prerm := "#!/bin/sh\n" +
 		"[ -x /etc/init.d/mywanipd ] && /etc/init.d/mywanipd stop >/dev/null 2>&1\n" +
@@ -158,6 +165,7 @@ func daemonControlFiles(version, arch, maintainer string, data []fileEntry) []fi
 	return []fileEntry{
 		{"control", []byte(control), 0o644},
 		{"conffiles", []byte("/etc/config/mywanip\n"), 0o644},
+		{"postinst", []byte(postinst), 0o755},
 		{"prerm", []byte(prerm), 0o755},
 	}
 }

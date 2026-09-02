@@ -10,8 +10,8 @@
 //	./data.tar.gz     安装到目标系统的文件树
 //	./control.tar.gz  control / conffiles / prerm
 //
-// 产物确定性：tar 头统一 uid/gid=0、root、零时间戳、文件名排序；
-// gzip 头不携带额外时间信息。
+// 产物确定性：tar 头统一 uid/gid=0、root、文件时间戳取当前 git commit
+// 时间（同一 commit 产物字节一致，文件日期又不显示为 1970）、文件名排序。
 package main
 
 import (
@@ -223,7 +223,7 @@ func totalSize(files []fileEntry) int {
 	return n
 }
 
-// ---------- tar.gz / ar 写入 ----------
+// ---------- tar.gz 写入 ----------
 
 // makeTarGz 把文件列表打成 tar.gz：root 属主、按名排序、统一 modTime。
 // modTime 取当前 git commit 时间——同一 commit 产物字节一致（可复现），

@@ -55,7 +55,7 @@ git tag v1.0.0 && make clean && make build && make ipk   # 产物落在 release/
 - IPv6：只保留全球单播 GUA（2000::/3），多候选取字典序最小保证输出确定。
 - 已知限制：stdlib 无法区分 RFC4941 临时地址（README 有说明）。
 
-**ipk 格式（最容易踩的坑，勿改回 ar）：** OpenWrt 24.10 的 opkg 分发/接受的是 **gzip+tar（经典 ipkg 格式）**，不是 Debian 的 ar 归档。结构为 `gzip(tar)`，外层 tar 含 `./debian-binary`（内容 `2.0\n`）、`./data.tar.gz`、`./control.tar.gz`，**所有 tar 成员名必须带 `./` 前缀**，且 **tar 必须包含全部父目录条目**（TypeDir，0755）——opkg 解压不会自动 mkdir，缺目录项会报 `wfopen: ... No such file or directory`。ar 格式会在路由器上报 `Malformed package file`。`cmd/ipkbuild` 用 stdlib `archive/tar`+`compress/gzip` 生成，确定性要求：uid/gid=0、Uname/Gname=root、ModTime 零值、文件名排序（连打两次产物字节一致，有测试锁定）。本机验证格式用 `tar tzf xxx.ipk`（macOS bsdtar 与 opkg 同为 libarchive）。
+**ipk 格式（最容易踩的坑，勿改回 ar）：** OpenWrt 24.10 的 opkg 分发/接受的是 **gzip+tar（经典 ipkg 格式）**，不是 Debian 的 ar 归档。结构为 `gzip(tar)`，外层 tar 含 `./debian-binary`（内容 `2.0\n`）、`./data.tar.gz`、`./control.tar.gz`，**所有 tar 成员名必须带 `./` 前缀**，且 **tar 必须包含全部父目录条目**（TypeDir，0755）——opkg 解压不会自动 mkdir，缺目录项会报 `wfopen: ... No such file or directory`。ar 格式会在路由器上报 `Malformed package file`。`cmd/ipkbuild` 用 stdlib `archive/tar`+`compress/gzip` 生成，确定性要求：uid/gid=0、Uname/Gname=root、ModTime 取当前 git commit 时间（同 commit 字节一致且文件日期不显示 1970）、文件名排序（连打两次产物字节一致，有测试锁定）。本机验证格式用 `tar tzf xxx.ipk`（macOS bsdtar 与 opkg 同为 libarchive）。
 
 **OpenWrt 集成（deploy/openwrt/）：**
 - `mywanipd/files/mywanipd.init` 是 procd 脚本：读 UCI `mywanip.main.enabled` 门控启动，`procd_add_reload_trigger mywanip` 让 LuCI「保存并应用」自动重启服务（程序只在启动时读配置，reload=重启）。

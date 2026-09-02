@@ -1,0 +1,11 @@
+# mywanipd 本地调试用配置（macOS）
+# 用法：go run ./cmd/mywanipd -config dev/mywanip.conf.example
+#
+# 路由器上的真实配置位于 /etc/config/mywanip，格式相同（UCI）。
+
+config mywanip 'main'
+    option enabled '1'
+    # macOS 上用 en0（本机网卡）联调；OpenWrt 上默认是 pppoe-wan
+    option interface 'en0'
+    # 仅监听本机回环，避免调试时暴露到局域网
+    option listen '127.0.0.1:9377'

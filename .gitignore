@@ -1,0 +1,10 @@
+# build artifacts
+dist/
+release/
+build/
+*.ipk
+
+# os / editor
+.DS_Store
+*.swp
+*~

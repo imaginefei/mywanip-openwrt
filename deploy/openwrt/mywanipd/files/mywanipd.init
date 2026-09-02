@@ -1,0 +1,40 @@
+#!/bin/sh /etc/rc.common
+
+USE_PROCD=1
+START=99
+STOP=15
+
+NAME=mywanipd
+PROG=/usr/bin/mywanipd
+CONF=mywanip
+
+start_service() {
+	local enabled interface listen
+
+	config_load "$CONF"
+	config_get_bool enabled main enabled 0
+	[ "$enabled" -eq 1 ] || {
+		echo "$NAME is disabled in /etc/config/$CONF (option enabled '0')"
+		return 0
+	}
+	config_get interface main interface "pppoe-wan"
+	config_get listen main listen ":9377"
+
+	procd_open_instance "$NAME"
+	procd_set_param command "$PROG" -config "/etc/config/$CONF"
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	# 崩溃自动重启：稳定运行阈值 3600s，重启间隔 5s，无限重试
+	procd_set_param respawn 3600 5 0
+	procd_close_instance
+}
+
+reload_service() {
+	# mywanipd 只在启动时读配置，reload 等价于重启
+	restart
+}
+
+service_triggers() {
+	# LuCI「保存并应用」(uci commit) 后自动触发 reload -> 重启服务
+	procd_add_reload_trigger "$CONF"
+}
